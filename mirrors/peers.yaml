@@ -1,0 +1,31 @@
+# =============================================================================
+# PeerDB Peers: Connection definitions
+# =============================================================================
+# Source: 34.93.93.62:5718  bluet_devpy_final_stg_replica
+# =============================================================================
+
+peers:
+  # ── PostgreSQL source ────────────────────────────────────────────────────
+  - name: vipani_postgres
+    type: POSTGRES
+    postgres_config:
+      host: "34.93.93.62"
+      port: 5718
+      database: "bluet_devpy_final_stg_replica"
+      user: "postgres"
+      password: "${PG_PASSWORD}"
+
+  # ── ClickHouse destination ────────────────────────────────────────────────
+  - name: vipani_clickhouse
+    type: CLICKHOUSE
+    clickhouse_config:
+      host: "${CH_HOST}"
+      port: ${CH_PORT}
+      database: "${CH_DATABASE}"
+      user: "${CH_USER}"
+      password: "${CH_PASSWORD}"
+      s3_path: ""
+      s3_region: ""
+      s3_access_key_id: ""
+      s3_secret_access_key: ""
+      disable_tls: true

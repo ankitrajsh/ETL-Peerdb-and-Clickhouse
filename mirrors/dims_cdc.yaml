@@ -1,0 +1,66 @@
+# =============================================================================
+# PeerDB Mirror: dims_cdc
+# =============================================================================
+# Source: 34.93.93.62:5718  bluet_devpy_final_stg_replica
+# Replicates all dimension / master tables via CDC (WAL logical replication).
+# Apply with:  python python/peerdb_manager.py apply mirrors/dims_cdc.yaml
+# =============================================================================
+
+mirror:
+  name: vipani_dims_cdc
+  mode: cdc
+  source_peer: vipani_postgres
+  destination_peer: vipani_clickhouse
+
+  do_initial_snapshot: true
+  snapshot_num_rows_per_partition: 100000
+  snapshot_num_tables_in_parallel: 4
+  snapshot_staging_path: ""
+
+  max_batch_size: 2000
+  idle_timeout_seconds: 30
+  publication_name: vipani_dims_pub
+  replication_slot_name: vipani_dims_slot
+
+  table_mappings:
+    # ── Organisation master  (549 rows) ───────────────────────────────────────
+    - source_table_identifier: public.userApis_organization
+      destination_table_identifier: vipaniv2.dim_organization_raw
+      column_exclude_list: []
+      soft_delete: false
+
+    # ── User master  (585 rows) ───────────────────────────────────────────────
+    - source_table_identifier: public.userApis_user
+      destination_table_identifier: vipaniv2.dim_user_raw
+      column_exclude_list: []
+      soft_delete: false
+
+    # ── Category master  (1 664 rows) ──────────────────────────────────────────
+    - source_table_identifier: public.categories
+      destination_table_identifier: vipaniv2.dim_category_raw
+      column_exclude_list: []
+      soft_delete: false
+
+    # ── Master product catalogue  (73 336 rows) ───────────────────────────────
+    - source_table_identifier: public.master_products
+      destination_table_identifier: vipaniv2.dim_product_raw
+      column_exclude_list: []
+      soft_delete: false
+
+    # ── Vendor product listings  (70 914 rows) ────────────────────────────────
+    - source_table_identifier: public.vendor_products
+      destination_table_identifier: vipaniv2.dim_vendor_product_raw
+      column_exclude_list: []
+      soft_delete: false
+
+    # ── User address  ──────────────────────────────────────────────────────────
+    - source_table_identifier: public.user_address
+      destination_table_identifier: vipaniv2.dim_user_address_raw
+      column_exclude_list: []
+      soft_delete: false
+
+    # ── Organization subscription plans  ───────────────────────────────────
+    - source_table_identifier: public.organization_subscriptions
+      destination_table_identifier: vipaniv2.dim_org_subscription_raw
+      column_exclude_list: []
+      soft_delete: false

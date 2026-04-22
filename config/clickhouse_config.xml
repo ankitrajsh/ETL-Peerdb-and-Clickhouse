@@ -1,0 +1,12 @@
+<!-- ClickHouse: allow larger result sets and enable external access -->
+<clickhouse>
+    <listen_host>0.0.0.0</listen_host>
+    <max_result_rows>1000000</max_result_rows>
+    <max_result_bytes>10000000000</max_result_bytes>
+    <result_overflow_mode>throw</result_overflow_mode>
+    <query_log>
+        <database>system</database>
+        <table>query_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </query_log>
+</clickhouse>

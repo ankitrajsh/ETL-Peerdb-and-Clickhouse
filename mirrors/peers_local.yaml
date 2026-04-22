@@ -1,0 +1,32 @@
+# =============================================================================
+# PeerDB Peers — LOCAL TESTING
+# =============================================================================
+# Source: localhost:5432 / vipani_devpy_final_stg (local PG18, wal_level=logical)
+# PeerDB runs inside Docker, so the host PG is accessed via host.docker.internal
+# =============================================================================
+
+peers:
+  # ── PostgreSQL source (LOCAL — accessed from inside Docker) ──────────────
+  - name: vipani_postgres
+    type: POSTGRES
+    postgres_config:
+      host: "host.docker.internal"   # resolves to the host machine from Docker
+      port: 5432
+      database: "vipani_devpy_final_stg"
+      user: "peerdb_replicator"
+      password: "${PEERDB_REPL_PASSWORD}"
+
+  # ── ClickHouse destination (also local — inside Docker network) ───────────
+  - name: vipani_clickhouse
+    type: CLICKHOUSE
+    clickhouse_config:
+      host: "clickhouse"             # Docker service name on peerdb_net
+      port: 8123
+      database: "${CH_DATABASE}"
+      user: "${CH_USER}"
+      password: "${CH_PASSWORD}"
+      s3_path: ""
+      s3_region: ""
+      s3_access_key_id: ""
+      s3_secret_access_key: ""
+      disable_tls: true

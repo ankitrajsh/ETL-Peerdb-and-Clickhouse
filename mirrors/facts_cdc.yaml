@@ -1,0 +1,114 @@
+# =============================================================================
+# PeerDB Mirror: facts_cdc
+# =============================================================================
+# Source: 34.93.93.62:5718  bluet_devpy_final_stg_replica
+# Replicates all transactional / event tables via CDC streaming.
+# Apply with:  python python/peerdb_manager.py apply mirrors/facts_cdc.yaml
+# =============================================================================
+
+mirror:
+  name: vipani_facts_cdc
+  mode: cdc
+  source_peer: vipani_postgres
+  destination_peer: vipani_clickhouse
+
+  do_initial_snapshot: true
+  snapshot_num_rows_per_partition: 50000
+  snapshot_num_tables_in_parallel: 5
+  snapshot_staging_path: ""
+
+  max_batch_size: 1000
+  idle_timeout_seconds: 10
+  publication_name: vipani_facts_pub
+  replication_slot_name: vipani_facts_slot
+
+  table_mappings:
+    # ── Purchase Orders  (642 rows) ─────────────────────────────────────────
+    - source_table_identifier: public.po_details
+      destination_table_identifier: vipaniv2.fact_po_raw
+      column_exclude_list: []
+      soft_delete: false
+
+    # ── PO Line Items ───────────────────────────────────────────────────────
+    - source_table_identifier: public.po_items
+      destination_table_identifier: vipaniv2.fact_po_item_raw
+      column_exclude_list: []
+      soft_delete: false
+
+    # ── RFQ (Request for Quotation)  (1 162 rows) ───────────────────────────
+    - source_table_identifier: public.bt_rfq
+      destination_table_identifier: vipaniv2.fact_rfq_raw
+      column_exclude_list: []
+      soft_delete: false
+
+    # ── RFQ Supplier Quotes  (999 rows) ────────────────────────────────────
+    - source_table_identifier: public.bt_rfq_quotes
+      destination_table_identifier: vipaniv2.fact_rfq_quote_raw
+      column_exclude_list: []
+      soft_delete: false
+
+    # ── RFQ Products (line items per RFQ) ─────────────────────────────────
+    - source_table_identifier: public.bt_rfq_products
+      destination_table_identifier: vipaniv2.fact_rfq_product_raw
+      column_exclude_list: []
+      soft_delete: false
+
+    # ── Purchase Request Form (PRF)  ──────────────────────────────────────
+    - source_table_identifier: public.bt_prf
+      destination_table_identifier: vipaniv2.fact_prf_raw
+      column_exclude_list: []
+      soft_delete: false
+
+    # ── PRF Products ─────────────────────────────────────────────────────────
+    - source_table_identifier: public.bt_prf_products
+      destination_table_identifier: vipaniv2.fact_prf_product_raw
+      column_exclude_list: []
+      soft_delete: false
+
+    # ── PO Tax Invoice  ────────────────────────────────────────────────────
+    - source_table_identifier: public.po_tax_invoice
+      destination_table_identifier: vipaniv2.fact_invoice_raw
+      column_exclude_list: []
+      soft_delete: false
+
+    # ── PO ASN (Advance Shipment Notice / Delivery) ────────────────────────
+    - source_table_identifier: public.po_asn
+      destination_table_identifier: vipaniv2.fact_delivery_raw
+      column_exclude_list: []
+      soft_delete: false
+
+    # ── Contract details  ──────────────────────────────────────────────────
+    - source_table_identifier: public.contract_details
+      destination_table_identifier: vipaniv2.fact_contract_raw
+      column_exclude_list: []
+      soft_delete: false
+
+    # ── Ratings  (252 rows) ─────────────────────────────────────────────────
+    - source_table_identifier: public.rating
+      destination_table_identifier: vipaniv2.fact_rating_raw
+      column_exclude_list: []
+      soft_delete: false
+
+    # ── Ratings review / tags  ──────────────────────────────────────────────
+    - source_table_identifier: public.ratings_review
+      destination_table_identifier: vipaniv2.fact_rating_review_raw
+      column_exclude_list: []
+      soft_delete: false
+
+    # ── Quote details (seller quotes to buyer) ────────────────────────────
+    - source_table_identifier: public.quote_details
+      destination_table_identifier: vipaniv2.fact_quote_raw
+      column_exclude_list: []
+      soft_delete: false
+
+    # ── Transactions / Payments  ──────────────────────────────────────────
+    - source_table_identifier: public.transactions
+      destination_table_identifier: vipaniv2.fact_transaction_raw
+      column_exclude_list: []
+      soft_delete: false
+
+    # ── Preferred partners (buyer↔seller relationships) ──────────────────────
+    - source_table_identifier: public.preferred_partners
+      destination_table_identifier: vipaniv2.fact_preferred_partner_raw
+      column_exclude_list: []
+      soft_delete: false

@@ -1,0 +1,5 @@
+# Temporal dynamic config — minimal settings for PeerDB's embedded Temporal
+limit.maxWorkflowExecutionSize:
+  - value: "100000"
+limit.maxHistoryLength:
+  - value: "100000"

@@ -1,0 +1,26 @@
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Local backups / scratch
+*.save
+*.bak
+*.tmp
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS/editor
+.DS_Store
+.vscode/
+
+# Accidental scratch files
+= [
+ql -h localhost -p 5432 -U postgres -d vipani_devpy_final_stg -c SELECT column_name, data_type FROM information_schema.columns WHERE table_schema='public' AND table_name='po_details' ORDER BY ordinal_position;
+tdout[:3000])
+ubprocess, os
+ubprocess, os, sys

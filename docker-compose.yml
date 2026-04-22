@@ -1,0 +1,141 @@
+version: "3.9"
+
+# =============================================================================
+# PeerDB ETL Pipeline — Docker Compose
+# =============================================================================
+# Services:
+#   peerdb           — PeerDB server (CDC + mirror engine)
+#   peerdb-ui        — PeerDB web console  (http://localhost:3000)
+#   catalog          — PeerDB internal Postgres metadata store
+#   clickhouse       — ClickHouse OLAP destination (http://localhost:8123)
+#
+# External services (already running on host):
+#   PostgreSQL source — host.docker.internal:5432  (vipani_devpy_final_stg)
+#
+# Usage:
+#   docker compose up -d
+#   docker compose logs -f peerdb
+#   docker compose down -v   # remove volumes (wipes all CDC state!)
+# =============================================================================
+
+x-peerdb-env: &peerdb-env
+  PEERDB_CATALOG_HOST: catalog
+  PEERDB_CATALOG_PORT: 5432
+  PEERDB_CATALOG_USER: peerdb
+  PEERDB_CATALOG_PASSWORD: ${PEERDB_CATALOG_PASSWORD:-change_me_catalog_password}
+  PEERDB_CATALOG_DATABASE: peerdb_catalog
+  PEERDB_LOG_LEVEL: ${PEERDB_LOG_LEVEL:-info}
+  PEERDB_TELEMETRY_AWF_METRIC_ENABLE: "false"
+  # Temporal (built-in)
+  TEMPORAL_HOST_PORT: temporal:7233
+
+services:
+  # ── PeerDB Catalog (internal metadata store) ──────────────────────────────
+  catalog:
+    image: postgres:15-alpine
+    container_name: peerdb_catalog
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: peerdb
+      POSTGRES_PASSWORD: ${PEERDB_CATALOG_PASSWORD:-change_me_catalog_password}
+      POSTGRES_DB: peerdb_catalog
+    volumes:
+      - peerdb_catalog_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U peerdb -d peerdb_catalog"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - peerdb_net
+
+  # ── Temporal (workflow engine used by PeerDB) ─────────────────────────────
+  temporal:
+    image: temporalio/auto-setup:1.24
+    container_name: peerdb_temporal
+    restart: unless-stopped
+    environment:
+      DB: postgresql
+      DB_PORT: 5432
+      POSTGRES_USER: peerdb
+      POSTGRES_PWD: ${PEERDB_CATALOG_PASSWORD:-change_me_catalog_password}
+      POSTGRES_SEEDS: catalog
+      DYNAMIC_CONFIG_FILE_PATH: /etc/temporal/dynamicconfig/development.yaml
+    volumes:
+      - ./config/temporal_dynamic.yaml:/etc/temporal/dynamicconfig/development.yaml:ro
+    depends_on:
+      catalog:
+        condition: service_healthy
+    networks:
+      - peerdb_net
+
+  # ── PeerDB Server ─────────────────────────────────────────────────────────
+  peerdb:
+    image: ghcr.io/peerdb-io/peerdb:stable
+    container_name: peerdb_server
+    restart: unless-stopped
+    ports:
+      - "8085:8085"   # gRPC / REST API
+    environment:
+      <<: *peerdb-env
+    depends_on:
+      catalog:
+        condition: service_healthy
+      temporal:
+        condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - peerdb_net
+
+  # ── PeerDB UI ─────────────────────────────────────────────────────────────
+  peerdb-ui:
+    image: ghcr.io/peerdb-io/peerdb-ui:stable
+    container_name: peerdb_ui
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      PEERDB_SERVER_URL: http://peerdb:8085
+    depends_on:
+      - peerdb
+    networks:
+      - peerdb_net
+
+  # ── ClickHouse (OLAP destination) ─────────────────────────────────────────
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3-alpine
+    container_name: peerdb_clickhouse
+    restart: unless-stopped
+    ports:
+      - "8123:8123"   # HTTP
+      - "9000:9000"   # Native TCP
+    environment:
+      CLICKHOUSE_DB: ${CH_DATABASE:-vipaniv2}
+      CLICKHOUSE_USER: ${CH_USER:-default}
+      CLICKHOUSE_PASSWORD: ${CH_PASSWORD:-}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./sql/clickhouse_cdc_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./sql/clickhouse_agg_schema.sql:/docker-entrypoint-initdb.d/02_agg_schema.sql:ro
+      - ./config/clickhouse_config.xml:/etc/clickhouse-server/config.d/custom.xml:ro
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - peerdb_net
+
+volumes:
+  peerdb_catalog_data:
+  clickhouse_data:
+
+networks:
+  peerdb_net:
+    driver: bridge
