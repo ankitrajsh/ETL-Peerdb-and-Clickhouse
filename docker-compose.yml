@@ -1,39 +1,26 @@
 version: "3.9"
 
-# =============================================================================
-# PeerDB ETL Pipeline — Docker Compose
-# =============================================================================
-# Services:
-#   peerdb           — PeerDB server (CDC + mirror engine)
-#   peerdb-ui        — PeerDB web console  (http://localhost:3000)
-#   catalog          — PeerDB internal Postgres metadata store
-#   clickhouse       — ClickHouse OLAP destination (http://localhost:8123)
-#
-# External services (already running on host):
-#   PostgreSQL source — host.docker.internal:5432  (vipani_devpy_final_stg)
-#
-# Usage:
-#   docker compose up -d
-#   docker compose logs -f peerdb
-#   docker compose down -v   # remove volumes (wipes all CDC state!)
-# =============================================================================
-
-x-peerdb-env: &peerdb-env
+x-catalog-config: &catalog-config
   PEERDB_CATALOG_HOST: catalog
   PEERDB_CATALOG_PORT: 5432
   PEERDB_CATALOG_USER: peerdb
   PEERDB_CATALOG_PASSWORD: ${PEERDB_CATALOG_PASSWORD:-change_me_catalog_password}
   PEERDB_CATALOG_DATABASE: peerdb_catalog
-  PEERDB_LOG_LEVEL: ${PEERDB_LOG_LEVEL:-info}
-  PEERDB_TELEMETRY_AWF_METRIC_ENABLE: "false"
-  # Temporal (built-in)
+
+x-flow-worker-env: &flow-worker-env
   TEMPORAL_HOST_PORT: temporal:7233
+  TEMPORAL_CLIENT_CERT:
+  TEMPORAL_CLIENT_KEY:
+  PEERDB_TEMPORAL_NAMESPACE: default
+  PEERDB_CLICKHOUSE_AWS_CREDENTIALS_AWS_ACCESS_KEY_ID: ${PEERDB_MINIO_ACCESS_KEY:-_peerdb_minioadmin}
+  PEERDB_CLICKHOUSE_AWS_CREDENTIALS_AWS_SECRET_ACCESS_KEY: ${PEERDB_MINIO_SECRET_KEY:-_peerdb_minioadmin}
+  PEERDB_CLICKHOUSE_AWS_CREDENTIALS_AWS_REGION: us-east-1
+  PEERDB_CLICKHOUSE_AWS_CREDENTIALS_AWS_ENDPOINT_URL_S3: http://minio:9000
+  PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME: ${PEERDB_S3_BUCKET_NAME:-peerdbbucket}
 
 services:
-  # ── PeerDB Catalog (internal metadata store) ──────────────────────────────
   catalog:
     image: postgres:15-alpine
-    container_name: peerdb_catalog
     restart: unless-stopped
     environment:
       POSTGRES_USER: peerdb
@@ -45,71 +32,126 @@ services:
       test: ["CMD-SHELL", "pg_isready -U peerdb -d peerdb_catalog"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
     networks:
       - peerdb_net
 
-  # ── Temporal (workflow engine used by PeerDB) ─────────────────────────────
   temporal:
-    image: temporalio/auto-setup:1.24
-    container_name: peerdb_temporal
+    image: temporalio/auto-setup:1.29
     restart: unless-stopped
+    depends_on:
+      catalog:
+        condition: service_healthy
     environment:
-      DB: postgresql
+      DB: postgres12
       DB_PORT: 5432
       POSTGRES_USER: peerdb
       POSTGRES_PWD: ${PEERDB_CATALOG_PASSWORD:-change_me_catalog_password}
       POSTGRES_SEEDS: catalog
-      DYNAMIC_CONFIG_FILE_PATH: /etc/temporal/dynamicconfig/development.yaml
+      DYNAMIC_CONFIG_FILE_PATH: /etc/temporal/config/dynamicconfig/development-sql.yaml
     volumes:
-      - ./config/temporal_dynamic.yaml:/etc/temporal/dynamicconfig/development.yaml:ro
-    depends_on:
-      catalog:
-        condition: service_healthy
+      - ./config/temporal_dynamic.yaml:/etc/temporal/config/dynamicconfig/development-sql.yaml:ro
     networks:
       - peerdb_net
 
-  # ── PeerDB Server ─────────────────────────────────────────────────────────
-  peerdb:
-    image: ghcr.io/peerdb-io/peerdb:stable
-    container_name: peerdb_server
+  temporal-admin-tools:
+    image: temporalio/admin-tools:1.25.2-tctl-1.18.1-cli-1.1.1
+    restart: unless-stopped
+    depends_on:
+      - temporal
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CLI_ADDRESS: temporal:7233
+      TEMPORAL_CLI_SHOW_STACKS: 1
+    healthcheck:
+      test: ["CMD", "tctl", "workflow", "list"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    networks:
+      - peerdb_net
+
+  flow-api:
+    image: ghcr.io/peerdb-io/flow-api:stable-v0.36.17
     restart: unless-stopped
     ports:
-      - "8085:8085"   # gRPC / REST API
+      - "8212:8112"
+      - "8213:8113"
     environment:
-      <<: *peerdb-env
-    depends_on:
-      catalog:
-        condition: service_healthy
-      temporal:
-        condition: service_started
+      <<: [*catalog-config, *flow-worker-env]
+      PEERDB_ALLOWED_TARGETS: ""
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      temporal-admin-tools:
+        condition: service_healthy
     networks:
       - peerdb_net
 
-  # ── PeerDB UI ─────────────────────────────────────────────────────────────
-  peerdb-ui:
-    image: ghcr.io/peerdb-io/peerdb-ui:stable
-    container_name: peerdb_ui
+  flow-worker:
+    image: ghcr.io/peerdb-io/flow-worker:stable-v0.36.17
+    restart: unless-stopped
+    environment:
+      <<: [*catalog-config, *flow-worker-env]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      temporal-admin-tools:
+        condition: service_healthy
+    networks:
+      - peerdb_net
+
+  flow-snapshot-worker:
+    image: ghcr.io/peerdb-io/flow-snapshot-worker:stable-v0.36.17
+    restart: unless-stopped
+    environment:
+      <<: [*catalog-config, *flow-worker-env]
+    depends_on:
+      temporal-admin-tools:
+        condition: service_healthy
+    networks:
+      - peerdb_net
+
+  peerdb:
+    image: ghcr.io/peerdb-io/peerdb-server:stable-v0.36.17
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "9910:9900"
     environment:
-      PEERDB_SERVER_URL: http://peerdb:8085
+      <<: *catalog-config
+      PEERDB_PASSWORD: ""
+      PEERDB_FLOW_SERVER_ADDRESS: grpc://flow-api:8112
+      RUST_LOG: info
+      RUST_BACKTRACE: 1
     depends_on:
-      - peerdb
+      catalog:
+        condition: service_healthy
     networks:
       - peerdb_net
 
-  # ── ClickHouse (OLAP destination) ─────────────────────────────────────────
+  peerdb-ui:
+    image: ghcr.io/peerdb-io/peerdb-ui:stable-v0.36.17
+    restart: unless-stopped
+    ports:
+      - "3100:3000"
+    environment:
+      <<: *catalog-config
+      PEERDB_FLOW_SERVER_HTTP: http://flow-api:8113
+      NEXTAUTH_SECRET: __changeme__
+      NEXTAUTH_URL: http://localhost:3100
+      PEERDB_ALLOWED_TARGETS: ""
+      PEERDB_CLICKHOUSE_ALLOWED_DOMAINS: ""
+      PEERDB_EXPERIMENTAL_ENABLE_SCRIPTING: "true"
+    depends_on:
+      - flow-api
+    networks:
+      - peerdb_net
+
   clickhouse:
     image: clickhouse/clickhouse-server:24.3-alpine
-    container_name: peerdb_clickhouse
     restart: unless-stopped
     ports:
-      - "8123:8123"   # HTTP
-      - "9000:9000"   # Native TCP
+      - "8144:8123"
     environment:
       CLICKHOUSE_DB: ${CH_DATABASE:-vipaniv2}
       CLICKHOUSE_USER: ${CH_USER:-default}
@@ -119,22 +161,34 @@ services:
       - clickhouse_data:/var/lib/clickhouse
       - ./sql/clickhouse_cdc_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
       - ./sql/clickhouse_agg_schema.sql:/docker-entrypoint-initdb.d/02_agg_schema.sql:ro
-      - ./config/clickhouse_config.xml:/etc/clickhouse-server/config.d/custom.xml:ro
     ulimits:
       nofile:
         soft: 262144
         hard: 262144
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      test: ["CMD-SHELL", "clickhouse-client --query 'SELECT 1'"]
       interval: 5s
       timeout: 5s
       retries: 20
     networks:
       - peerdb_net
 
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${PEERDB_MINIO_ACCESS_KEY:-_peerdb_minioadmin}
+      MINIO_ROOT_PASSWORD: ${PEERDB_MINIO_SECRET_KEY:-_peerdb_minioadmin}
+    command: server /data --console-address :36987
+    volumes:
+      - minio_data:/data
+    networks:
+      - peerdb_net
+
 volumes:
   peerdb_catalog_data:
   clickhouse_data:
+  minio_data:
 
 networks:
   peerdb_net:

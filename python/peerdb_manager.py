@@ -93,18 +93,19 @@ def _env_sub(value: Any) -> Any:
 # Peer management
 # =============================================================================
 
-PEER_TYPE_MAP = {
-    "POSTGRES":   1,
-    "CLICKHOUSE": 8,
-    "SNOWFLAKE":  2,
-    "BIGQUERY":   3,
+SUPPORTED_PEER_TYPES = {
+    "POSTGRES",
+    "CLICKHOUSE",
+    "SNOWFLAKE",
+    "BIGQUERY",
+    "MYSQL",
+    "MONGO",
 }
 
 
 def _create_peer(peer: dict) -> None:
     peer_type = peer["type"].upper()
-    type_int = PEER_TYPE_MAP.get(peer_type)
-    if type_int is None:
+    if peer_type not in SUPPORTED_PEER_TYPES:
         raise ValueError(f"Unsupported peer type: {peer_type}")
 
     # Config key follows PeerDB convention: postgres_config / clickhouse_config …
@@ -118,7 +119,7 @@ def _create_peer(peer: dict) -> None:
     payload = {
         "peer": {
             "name": peer["name"],
-            "type": type_int,
+            "type": peer_type,
             config_key: config,
         }
     }
@@ -143,27 +144,28 @@ def _create_mirror(mirror: dict) -> None:
     if mode == "cdc":
         table_mappings = [
             {
-                "source_table_identifier":      m["source_table_identifier"],
-                "destination_table_identifier": m["destination_table_identifier"],
-                "column_exclude_list":          m.get("column_exclude_list", []),
-                "soft_delete":                  m.get("soft_delete", False),
+                "sourceTableIdentifier":      m["source_table_identifier"],
+                "destinationTableIdentifier": m["destination_table_identifier"],
+                "columnExcludeList":          m.get("column_exclude_list", []),
+                "softDelete":                 m.get("soft_delete", False),
             }
             for m in mirror.get("table_mappings", [])
         ]
 
         payload = {
-            "connection_configs": {
-                "flow_job_name":                    name,
-                "source":                           {"name": mirror["source_peer"]},
-                "destination":                      {"name": mirror["destination_peer"]},
-                "table_mappings":                   table_mappings,
-                "do_initial_snapshot":              mirror.get("do_initial_snapshot", True),
-                "snapshot_num_rows_per_partition":  mirror.get("snapshot_num_rows_per_partition", 100000),
-                "snapshot_num_tables_in_parallel":  mirror.get("snapshot_num_tables_in_parallel", 4),
-                "max_batch_size":                   mirror.get("max_batch_size", 1000),
-                "idle_timeout_seconds":             mirror.get("idle_timeout_seconds", 30),
-                "publication_name":                 mirror.get("publication_name", ""),
-                "replication_slot_name":            mirror.get("replication_slot_name", ""),
+            "connectionConfigs": {
+                "flowJobName":                   name,
+                "sourceName":                    mirror["source_peer"],
+                "destinationName":               mirror["destination_peer"],
+                "tableMappings":                 table_mappings,
+                "doInitialSnapshot":             mirror.get("do_initial_snapshot", True),
+                "snapshotNumRowsPerPartition":   mirror.get("snapshot_num_rows_per_partition", 100000),
+                "snapshotNumTablesInParallel":   mirror.get("snapshot_num_tables_in_parallel", 4),
+                "maxBatchSize":                  mirror.get("max_batch_size", 1000),
+                "idleTimeoutSeconds":            mirror.get("idle_timeout_seconds", 30),
+                "publicationName":               mirror.get("publication_name", ""),
+                "replicationSlotName":           mirror.get("replication_slot_name", ""),
+                "cdcStagingPath":                mirror.get("snapshot_staging_path", "s3://peerdbbucket/staging"),
             }
         }
     else:
@@ -267,7 +269,7 @@ def cmd_validate() -> None:
         payload = {
             "peer": {
                 "name": peer["name"],
-                "type": PEER_TYPE_MAP[peer_type],
+                "type": peer_type,
                 config_key: config,
             }
         }

@@ -21,7 +21,7 @@ peers:
     type: CLICKHOUSE
     clickhouse_config:
       host: "clickhouse"             # Docker service name on peerdb_net
-      port: 8123
+      port: 9000
       database: "${CH_DATABASE}"
       user: "${CH_USER}"
       password: "${CH_PASSWORD}"

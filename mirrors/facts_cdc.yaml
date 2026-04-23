@@ -1,7 +1,7 @@
 # =============================================================================
 # PeerDB Mirror: facts_cdc
 # =============================================================================
-# Source: 34.93.93.62:5718  bluet_devpy_final_stg_replica
+# Source: <your-postgres-host>:<port>  <your-database>
 # Replicates all transactional / event tables via CDC streaming.
 # Apply with:  python python/peerdb_manager.py apply mirrors/facts_cdc.yaml
 # =============================================================================

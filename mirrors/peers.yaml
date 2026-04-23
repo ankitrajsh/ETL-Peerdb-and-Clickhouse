@@ -1,7 +1,7 @@
 # =============================================================================
 # PeerDB Peers: Connection definitions
 # =============================================================================
-# Source: 34.93.93.62:5718  bluet_devpy_final_stg_replica
+# Source: <your-postgres-host>:<port>  <your-database>
 # =============================================================================
 
 peers:
@@ -9,7 +9,7 @@ peers:
   - name: vipani_postgres
     type: POSTGRES
     postgres_config:
-      host: "34.93.93.62"
+      host: "${PG_HOST}"
       port: 5718
       database: "bluet_devpy_final_stg_replica"
       user: "postgres"
